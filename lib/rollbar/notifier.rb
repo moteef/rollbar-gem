@@ -22,6 +22,10 @@ module Rollbar
     MUTEX = Mutex.new
     EXTENSION_REGEXP = /.rollbar\z/.freeze
 
+    class << self
+      attr_accessor :update_file_time
+    end
+
     def initialize(parent_notifier = nil, payload_options = nil, scope = nil)
       if parent_notifier
         self.configuration = parent_notifier.configuration.clone
@@ -705,12 +709,14 @@ module Rollbar
       return unless configuration.files_processed_enabled
 
       time_now = Time.now
-      return if configuration.files_processed_duration > time_now - file.birthtime && file.size < configuration.files_processed_size
+      self.class.update_file_time ||= time_now
+      return if configuration.files_processed_duration > time_now - self.class.update_file_time && file.size < configuration.files_processed_size
 
       new_file_name = file_name.gsub(EXTENSION_REGEXP, "_processed_#{time_now.to_i}\\0")
       File.rename(file, new_file_name)
       file.close
       @file = File.open(file_name, 'a')
+      self.class.update_file_time = time_now
     end
 
     def failsafe_reason(message, exception)
