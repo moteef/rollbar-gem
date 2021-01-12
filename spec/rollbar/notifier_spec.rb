@@ -49,85 +49,20 @@ describe Rollbar::Notifier do
     let(:item) { Rollbar::Item.build_with(payload) }
     let(:logger) { double(Logger).as_null_object }
     let(:filepath) { 'test.rollbar' }
+    let(:file_notifier) { instance_double(::Rollbar::FileNotifier) }
 
-    before { notifier.configuration.logger = logger }
+    before do
+      notifier.configuration.logger = logger
+      allow(described_class).to receive(:file_notifier).and_return(file_notifier)
+    end
 
-    context 'when configured to write' do
+    context 'when configured to write to file' do
       before { notifier.configuration.write_to_file = true }
 
-      let(:dummy_file) { double(File).as_null_object }
-
       it 'writes to the file' do
-        allow(File).to receive(:open).with(nil, 'a').and_return(dummy_file)
+        expect(file_notifier).to receive(:write_item).with(item)
 
         process_item
-
-        expect(dummy_file).to have_received(:puts).with(payload.to_json)
-      end
-    end
-
-    context 'when configured to write with process file without rename' do
-      before do
-        notifier.configuration.write_to_file = true
-        notifier.configuration.files_processed_enabled = true
-      end
-
-      let(:dummy_file) { double(File, birthtime: Time.now, size: 0).as_null_object }
-
-      it 'writes to the file' do
-        allow(File).to receive(:open).with(nil, 'a').and_return(dummy_file)
-        allow(File).to receive(:rename).with(dummy_file, String).and_return(0)
-
-        process_item
-
-        expect(dummy_file).to have_received(:puts).with(payload.to_json)
-        expect(File).not_to have_received(:rename).with(dummy_file, String)
-      end
-    end
-
-    context 'when configured to write with process file and file birthtime is already greater than default value' do
-      before do
-        notifier.configuration.write_to_file = true
-        notifier.configuration.files_processed_enabled = true
-        notifier.configuration.filepath = filepath
-      end
-
-      let(:dummy_file) do
-        double(
-          File, birthtime: Time.now - (notifier.configuration.files_processed_duration + 1).seconds, size: 0
-        ).as_null_object
-      end
-
-      it 'writes to the file and rename' do
-        allow(File).to receive(:open).with('test.rollbar', 'a').and_return(dummy_file)
-        allow(File).to receive(:rename).with(dummy_file, String).and_return(0)
-
-        process_item
-
-        expect(dummy_file).to have_received(:puts).with(payload.to_json)
-        expect(File).to have_received(:rename).with(dummy_file, String)
-      end
-    end
-
-    context 'when configured to write with process file and large file size' do
-      before do
-        notifier.configuration.write_to_file = true
-        notifier.configuration.files_processed_enabled = true
-        notifier.configuration.filepath = filepath
-      end
-
-      let(:dummy_file) do
-        double(File, birthtime: Time.now, size: notifier.configuration.files_processed_size + 1).as_null_object
-      end
-
-      it 'writes to the file and rename' do
-        allow(File).to receive(:open).with(filepath, 'a').and_return(dummy_file)
-        allow(File).to receive(:rename).with(dummy_file, String).and_return(0)
-
-        process_item
-
-        expect(dummy_file).to have_received(:puts).with(payload.to_json)
-        expect(File).to have_received(:rename).with(dummy_file, String)
       end
     end
 
@@ -135,18 +70,16 @@ describe Rollbar::Notifier do
       before do
         notifier.configuration.write_to_file = false
 
-        allow(File).to receive(:open).with(nil, 'a').and_return(dummy_file)
+        expect(File).not_to receive(:open)
+        expect(file_notifier).not_to receive(:write_item)
         allow(Net::HTTP).to receive(:new).and_return(dummy_http)
         allow(::Rollbar).to receive(:log_error)
       end
 
-      let(:dummy_file) { double(File).as_null_object }
       let(:dummy_http) { double(Net::HTTP).as_null_object }
 
       it 'does not write to the file' do
         process_item
-
-        expect(dummy_file).not_to have_received(:puts).with(item)
       end
 
       it 'attempts to send via HTTP' do
@@ -159,7 +92,7 @@ describe Rollbar::Notifier do
         before { allow(dummy_http).to receive(:request).and_raise(SocketError) }
 
         it 'passes the message on' do
-          expect {process_item}.to raise_error(SocketError)
+          expect { process_item }.to raise_error(SocketError)
         end
 
         context 'the item has come via failsafe' do

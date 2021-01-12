@@ -31,8 +31,7 @@ module Rollbar
 
     def_delegators :notifier, *PUBLIC_NOTIFIER_METHODS
 
-    attr_writer :plugins
-    attr_writer :root_notifier
+    attr_writer :plugins, :root_notifier
 
     def notifier
       # Use the global instance @root_notifier so we don't fall
@@ -117,6 +116,7 @@ module Rollbar
     # Clears the current thread notifier and the root notifier.
     # In the practice this should be used only on the specs
     def clear_notifier!
+      Rollbar::Notifier.reset_file_notifier
       self.notifier = nil
       self.root_notifier = nil
     end

@@ -9,21 +9,28 @@ require 'rollbar/delay/thread'
 require 'rollbar/logger_proxy'
 require 'rollbar/item'
 require 'rollbar/notifier/trace_with_bindings'
+require 'rollbar/file_notifier'
 require 'ostruct'
 
 module Rollbar
   # The notifier class. It has the core functionality
   # for sending reports to the API.
   class Notifier
-    attr_accessor :configuration
-    attr_accessor :last_report
-    attr_accessor :scope_object
+    attr_accessor :configuration, :last_report, :scope_object
 
     MUTEX = Mutex.new
-    EXTENSION_REGEXP = /.rollbar\z/.freeze
 
-    class << self
-      attr_accessor :update_file_time
+    def self.file_notifier
+      @file_notifier || MUTEX.synchronize do
+        @file_notifier ||= Rollbar::FileNotifier.new(Rollbar.notifier)
+      end
+    end
+
+    def self.reset_file_notifier
+      MUTEX.synchronize do
+        @file_notifier.stop if @file_notifier
+        @file_notifier = nil
+      end
     end
 
     def initialize(parent_notifier = nil, payload_options = nil, scope = nil)
@@ -204,13 +211,7 @@ module Rollbar
 
     def process_item(item)
       if configuration.write_to_file
-        if configuration.use_async
-          MUTEX.synchronize do
-            do_write_item(item)
-          end
-        else
-          do_write_item(item)
-        end
+        do_write_item(item)
       else
         send_item(item)
       end
@@ -492,7 +493,7 @@ module Rollbar
       rescue StandardError => e
         send_failsafe('error logging instance link', e)
         log_error "[Rollbar] Item: #{item}"
-        return
+        nil
       end
     end
 
@@ -681,42 +682,7 @@ module Rollbar
     end
 
     def do_write_item(item)
-      log_info '[Rollbar] Writing item to file'
-
-      body = item.dump
-      return unless body
-
-      file_name = if configuration.files_with_pid_name_enabled
-                    configuration.filepath.gsub(EXTENSION_REGEXP, "_#{Process.pid}\\0")
-                  else
-                    configuration.filepath
-                  end
-
-      begin
-        @file ||= File.open(file_name, 'a')
-
-        @file.puts(body)
-        @file.flush
-        update_file(@file, file_name)
-
-        log_info '[Rollbar] Success'
-      rescue IOError => e
-        log_error "[Rollbar] Error opening/writing to file: #{e}"
-      end
-    end
-
-    def update_file(file, file_name)
-      return unless configuration.files_processed_enabled
-
-      time_now = Time.now
-      self.class.update_file_time ||= time_now
-      return if configuration.files_processed_duration > time_now - self.class.update_file_time && file.size < configuration.files_processed_size
-
-      new_file_name = file_name.gsub(EXTENSION_REGEXP, "_processed_#{time_now.to_i}\\0")
-      File.rename(file, new_file_name)
-      file.close
-      @file = File.open(file_name, 'a')
-      self.class.update_file_time = time_now
+      self.class.file_notifier.write_item(item)
     end
 
     def failsafe_reason(message, exception)
