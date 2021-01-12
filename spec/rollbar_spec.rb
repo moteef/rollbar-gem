@@ -15,18 +15,18 @@ require 'spec_helper'
 begin
   require 'rollbar/delay/sidekiq'
   require 'rollbar/delay/sucker_punch'
-rescue LoadError # rubocop:disable HandleExceptions
+rescue LoadError
 end
 
 begin
   require 'sucker_punch'
   require 'sucker_punch/testing/inline'
-rescue LoadError # rubocop:disable HandleExceptions
+rescue LoadError
 end
 
 begin
   require 'rollbar/delay/shoryuken'
-rescue LoadError # rubocop:disable HandleExceptions
+rescue LoadError
 end
 
 describe Rollbar do
@@ -1287,7 +1287,7 @@ describe Rollbar do
         config.write_to_file = true
         config.files_with_pid_name_enabled = true
 
-        filepath = config.filepath.gsub(Rollbar::Notifier::EXTENSION_REGEXP, "_#{Process.pid}\\0")
+        filepath = config.filepath.gsub(Rollbar::FileNotifier::EXTENSION_REGEXP, "_#{Process.pid}\\0")
       end
 
       Rollbar.error(exception)
@@ -1452,8 +1452,7 @@ describe Rollbar do
     end
 
     it 'should send without configured_options in payload when async_json_payload is not set',
-      :if => Gem.loaded_specs['activesupport'].version >= Gem::Version.new('4.1') do
-
+       :if => Gem.loaded_specs['activesupport'].version >= Gem::Version.new('4.1') do
       # Verify no configured_options
       logger_mock.should_receive(:info).with('not serialized when async_json_payload is not set')
 
@@ -1693,7 +1692,7 @@ describe Rollbar do
 
   context 'project_gems' do
     it 'should include gem paths for specified project gems in the payload' do
-      gems = ['rack', 'rspec-rails']
+      gems = %w[rack rspec-rails]
       gem_paths = []
 
       Rollbar.configure do |config|
@@ -1722,7 +1721,7 @@ describe Rollbar do
       end
 
       gem_paths = gems.map do |name|
-        Gem::Specification.each.select { |spec| name === spec.name } # rubocop:disable CaseEquality
+        Gem::Specification.each.select { |spec| name === spec.name }
       end.flatten.uniq.map(&:gem_dir)
 
       gem_paths.length.should be > 1
